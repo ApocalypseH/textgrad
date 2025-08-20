@@ -79,5 +79,9 @@ def get_engine(engine_name: str, **kwargs) -> EngineLM:
         from .groq import ChatGroq
         engine_name = engine_name.replace("groq-", "")
         return ChatGroq(model_string=engine_name, **kwargs)
+    elif "my" in engine_name:
+        from .my import ChatOpenAI
+        engine_name = engine_name.replace("my-", "")
+        return ChatOpenAI(model_string=engine_name, **kwargs)
     else:
         raise ValueError(f"Engine {engine_name} not supported")

@@ -7,7 +7,7 @@ with open("README.md") as readme_file:
     readme = readme_file.read()
 
 setup(
-    name="textgrad",
+    name="textgrad-yanghai",
     version="0.1.8",
     description="",
     python_requires=">=3.9",
@@ -21,9 +21,9 @@ setup(
     license="MIT license",
     long_description=readme,
     long_description_content_type="text/markdown",
-    url="https://github.com/zou-group/textgrad",
-    author="Zou Group",
-    author_email="merty@stanford.edu",
+    url="https://github.com/ApocalypseH/textgrad",
+    author="Yanghai Zhang",
+    author_email="yhzhang0612@mail.ustc.edu.cn",
     packages=find_packages(include=["textgrad", "textgrad.*"]),
     include_package_data=True,
     install_requires=requirements,

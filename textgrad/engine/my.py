@@ -8,6 +8,7 @@ except ImportError:
 import base64
 import json
 import os
+import re
 from typing import List, Union, Optional
 
 import platformdirs
@@ -95,6 +96,7 @@ class BaseOpenAIEngine(EngineLM, CachedEngine):
         )
 
         response = response.choices[0].message.content
+        response = re.sub(r"<think>.*?</think>", "", response, flags=re.DOTALL).strip()
         self._save_cache(sys_prompt_arg + prompt, response)
         return response
 
@@ -151,6 +153,7 @@ class BaseOpenAIEngine(EngineLM, CachedEngine):
         )
 
         response_text = response.choices[0].message.content
+        response_text = re.sub(r"<think>.*?</think>", "", response_text, flags=re.DOTALL).strip()
         self._save_cache(cache_key, response_text)
         return response_text
 

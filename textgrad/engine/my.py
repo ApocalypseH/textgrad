@@ -72,7 +72,7 @@ class BaseOpenAIEngine(EngineLM, CachedEngine):
         prompt: str,
         system_prompt: str = None,
         temperature=0,
-        max_tokens=2000,
+        max_tokens=10000,
         top_p=0.99,
     ):
         sys_prompt_arg = system_prompt if system_prompt else self.system_prompt
@@ -97,6 +97,8 @@ class BaseOpenAIEngine(EngineLM, CachedEngine):
 
         response = response.choices[0].message.content
         response = re.sub(r"<think>.*?</think>", "", response, flags=re.DOTALL).strip()
+        if len(response) > 4000:
+            response = response[:2000] + "..." + response[-2000:]
         self._save_cache(sys_prompt_arg + prompt, response)
         return response
 
@@ -130,7 +132,7 @@ class BaseOpenAIEngine(EngineLM, CachedEngine):
         content: List[Union[str, bytes]],
         system_prompt=None,
         temperature=0,
-        max_tokens=2000,
+        max_tokens=10000,
         top_p=0.99,
     ):
         sys_prompt_arg = system_prompt if system_prompt else self.system_prompt
@@ -154,6 +156,8 @@ class BaseOpenAIEngine(EngineLM, CachedEngine):
 
         response_text = response.choices[0].message.content
         response_text = re.sub(r"<think>.*?</think>", "", response_text, flags=re.DOTALL).strip()
+        if len(response) > 4000:
+            response = response[:2000] + "..." + response[-2000:]
         self._save_cache(cache_key, response_text)
         return response_text
 

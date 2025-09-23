@@ -175,6 +175,7 @@ class ChatOpenAI(BaseOpenAIEngine):
         base_url: Optional[str] = None,
         api_key: Optional[str] = None,
         reasoning_effort: Union[str, NotGiven] = NOT_GIVEN,
+        cache_root: Optional[str] = None,
         **kwargs,
     ):
         """
@@ -183,7 +184,11 @@ class ChatOpenAI(BaseOpenAIEngine):
         :param base_url: Used to support customized API service, if not provided, it will look for OPENAI_BASE_URL in environment variables
         :param api_key: API key for authentication, if not provided, it will look for OPENAI_API_KEY in environment variables
         """
-        root = platformdirs.user_cache_dir("textgrad")
+        if cache_root is None:
+            root = platformdirs.user_cache_dir("textgrad")
+        else:
+            root = cache_root
+            os.mkdir(root) if not os.path.exists(root) else None
         cache_path = os.path.join(root, f"cache_my_{model_string}.db")
 
         super().__init__(cache_path, system_prompt, model_string, is_multimodal, reasoning_effort)

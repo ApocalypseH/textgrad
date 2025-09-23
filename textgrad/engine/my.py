@@ -1,5 +1,5 @@
 try:
-    from openai import AzureOpenAI, OpenAI
+    from openai import AzureOpenAI, OpenAI, NotGiven, NOT_GIVEN
 except ImportError:
     raise ImportError(
         "If you'd like to use customized API models, please install the openai package by running `pip install openai`."
@@ -38,11 +38,13 @@ class BaseOpenAIEngine(EngineLM, CachedEngine):
         system_prompt: str,
         model_string: str,
         is_multimodal: bool = False,
+        reasoning_effort: Union[str, NotGiven] = NOT_GIVEN,
     ):
         super().__init__(cache_path=cache_path)
         self.system_prompt = system_prompt
         self.model_string = model_string
         self.is_multimodal = is_multimodal
+        self.reasoning_effort = reasoning_effort
 
     @retry(wait=wait_random_exponential(min=1, max=5), stop=stop_after_attempt(5))
     def generate(
@@ -87,6 +89,7 @@ class BaseOpenAIEngine(EngineLM, CachedEngine):
                 {"role": "system", "content": sys_prompt_arg},
                 {"role": "user", "content": prompt},
             ],
+            reasoning_effort=self.reasoning_effort,
             frequency_penalty=0,
             presence_penalty=0,
             stop=None,
@@ -149,6 +152,7 @@ class BaseOpenAIEngine(EngineLM, CachedEngine):
                 {"role": "system", "content": sys_prompt_arg},
                 {"role": "user", "content": formatted_content},
             ],
+            reasoning_effort=self.reasoning_effort,
             temperature=temperature,
             max_tokens=max_tokens,
             top_p=top_p,
@@ -170,6 +174,7 @@ class ChatOpenAI(BaseOpenAIEngine):
         is_multimodal: bool = False,
         base_url: Optional[str] = None,
         api_key: Optional[str] = None,
+        reasoning_effort: Union[str, NotGiven] = NOT_GIVEN,
         **kwargs,
     ):
         """
@@ -181,7 +186,7 @@ class ChatOpenAI(BaseOpenAIEngine):
         root = platformdirs.user_cache_dir("textgrad")
         cache_path = os.path.join(root, f"cache_my_{model_string}.db")
 
-        super().__init__(cache_path, system_prompt, model_string, is_multimodal)
+        super().__init__(cache_path, system_prompt, model_string, is_multimodal, reasoning_effort)
 
         if not base_url and os.getenv("OPENAI_BASE_URL") is None:
             raise ValueError(
@@ -198,50 +203,3 @@ class ChatOpenAI(BaseOpenAIEngine):
         api_key = api_key if api_key else os.getenv("OPENAI_API_KEY")
 
         self.client = OpenAI(api_key=api_key, base_url=base_url)
-
-
-class AzureChatOpenAI(BaseOpenAIEngine):
-    def __init__(
-        self,
-        model_string="gpt-35-turbo",
-        system_prompt=BaseOpenAIEngine.DEFAULT_SYSTEM_PROMPT,
-        is_multimodal: bool = False,
-        **kwargs,
-    ):
-        """
-        Initializes an interface for interacting with Azure's OpenAI models.
-
-        This class extends the EngineLM and CachedEngine classes to use Azure's OpenAI API instead of OpenAI's API. It sets up the necessary client with the appropriate API version, API key, and endpoint from environment variables.
-
-        :param model_string: The model identifier for Azure OpenAI. Defaults to 'gpt-35-turbo'.
-        :param system_prompt: The default system prompt to use when generating responses. Defaults to the default system prompt.
-        :param is_multimodal: Whether this is a multimodal model. Defaults to False.
-        :param kwargs: Additional keyword arguments.
-
-        Environment variables:
-        - AZURE_OPENAI_API_KEY: The API key for authenticating with Azure OpenAI.
-        - AZURE_OPENAI_API_BASE: The base URL for the Azure OpenAI API.
-        - AZURE_OPENAI_API_VERSION: The API version to use. Defaults to '2023-07-01-preview' if not set.
-
-        Raises:
-            ValueError: If the AZURE_OPENAI_API_KEY environment variable is not set.
-        """
-        root = platformdirs.user_cache_dir("textgrad")
-        cache_path = os.path.join(
-            root, f"cache_azure_{model_string}.db"
-        )  # Changed cache path to differentiate from OpenAI cache
-
-        super().__init__(cache_path, system_prompt, model_string, is_multimodal)
-
-        api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2023-07-01-preview")
-        if os.getenv("AZURE_OPENAI_API_KEY") is None:
-            raise ValueError(
-                "Please set the AZURE_OPENAI_API_KEY, AZURE_OPENAI_API_BASE, and AZURE_OPENAI_API_VERSION environment variables if you'd like to use Azure OpenAI models."
-            )
-
-        self.client = AzureOpenAI(
-            api_version=api_version,
-            api_key=os.getenv("AZURE_OPENAI_API_KEY"),
-            azure_endpoint=os.getenv("AZURE_OPENAI_API_BASE"),
-            azure_deployment=model_string,
-        )

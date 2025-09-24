@@ -1,5 +1,5 @@
 try:
-    from openai import AzureOpenAI, OpenAI, NotGiven, NOT_GIVEN
+    from openai import AzureOpenAI, OpenAI, NotGiven, NOT_GIVEN, DEFAULT_MAX_RETRIES
 except ImportError:
     raise ImportError(
         "If you'd like to use customized API models, please install the openai package by running `pip install openai`."
@@ -39,12 +39,14 @@ class BaseOpenAIEngine(EngineLM, CachedEngine):
         model_string: str,
         is_multimodal: bool = False,
         reasoning_effort: Union[str, NotGiven] = NOT_GIVEN,
+        stream: bool = False,
     ):
         super().__init__(cache_path=cache_path)
         self.system_prompt = system_prompt
         self.model_string = model_string
         self.is_multimodal = is_multimodal
         self.reasoning_effort = reasoning_effort
+        self.stream = stream
 
     @retry(wait=wait_random_exponential(min=1, max=5), stop=stop_after_attempt(5))
     def generate(
@@ -83,27 +85,56 @@ class BaseOpenAIEngine(EngineLM, CachedEngine):
         if cache_or_none is not None:
             return cache_or_none
 
-        response = self.client.chat.completions.create(
-            model=self.model_string,
-            messages=[
-                {"role": "system", "content": sys_prompt_arg},
-                {"role": "user", "content": prompt},
-            ],
-            reasoning_effort=self.reasoning_effort,
-            frequency_penalty=0,
-            presence_penalty=0,
-            stop=None,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            top_p=top_p,
-        )
+        if self.stream:
+            for attempt in range(DEFAULT_MAX_RETRIES + 1):
+                response_text = ""
+                response = self.client.chat.completions.create(
+                    model=self.model_string,
+                    messages=[
+                        {"role": "system", "content": sys_prompt_arg},
+                        {"role": "user", "content": prompt},
+                    ],
+                    reasoning_effort=self.reasoning_effort,
+                    frequency_penalty=0,
+                    presence_penalty=0,
+                    stop=None,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    top_p=top_p,
+                    stream=True,
+                )
 
-        response = response.choices[0].message.content
-        response = re.sub(r"<think>.*?</think>", "", response, flags=re.DOTALL).strip()
-        if len(response) > 4000:
-            response = response[:2000] + "..." + response[-2000:]
-        self._save_cache(sys_prompt_arg + prompt, response)
-        return response
+                try:
+                    for chunk in response:
+                        response_text += chunk.choices[0].delta.content
+                        if chunk.choices[0].finish_reason is not None:
+                            break
+                    break  # If we reach here, the streaming was successful, so we break out of the retry loop
+                except Exception as e:
+                    if attempt == DEFAULT_MAX_RETRIES:
+                        raise e
+        else:
+            response = self.client.chat.completions.create(
+                model=self.model_string,
+                messages=[
+                    {"role": "system", "content": sys_prompt_arg},
+                    {"role": "user", "content": prompt},
+                ],
+                reasoning_effort=self.reasoning_effort,
+                frequency_penalty=0,
+                presence_penalty=0,
+                stop=None,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                top_p=top_p,
+            )
+            response_text = response.choices[0].message.content
+
+        response_text = re.sub(r"<think>.*?</think>", "", response_text, flags=re.DOTALL).strip()
+        if len(response_text) > 4000:
+            response_text = response_text[:2000] + "..." + response_text[-2000:]
+        self._save_cache(sys_prompt_arg + prompt, response_text)
+        return response_text
 
     def __call__(self, prompt, **kwargs):
         return self.generate(prompt, **kwargs)
@@ -145,23 +176,49 @@ class BaseOpenAIEngine(EngineLM, CachedEngine):
         cache_or_none = self._check_cache(cache_key)
         if cache_or_none is not None:
             return cache_or_none
+        
+        if self.stream:
+            for attempt in range(DEFAULT_MAX_RETRIES + 1):
+                response_text = ""
+                response = self.client.chat.completions.create(
+                    model=self.model_string,
+                    messages=[
+                        {"role": "system", "content": sys_prompt_arg},
+                        {"role": "user", "content": formatted_content},
+                    ],
+                    reasoning_effort=self.reasoning_effort,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    top_p=top_p,
+                    stream=True,
+                )
 
-        response = self.client.chat.completions.create(
-            model=self.model_string,
-            messages=[
-                {"role": "system", "content": sys_prompt_arg},
-                {"role": "user", "content": formatted_content},
-            ],
-            reasoning_effort=self.reasoning_effort,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            top_p=top_p,
-        )
+                try:
+                    for chunk in response:
+                        response_text += chunk.choices[0].delta.content
+                        if chunk.choices[0].finish_reason is not None:
+                            break
+                    break  # If we reach here, the streaming was successful, so we break out of the retry loop
+                except Exception as e:
+                    if attempt == DEFAULT_MAX_RETRIES:
+                        raise e
+        else:
+            response = self.client.chat.completions.create(
+                model=self.model_string,
+                messages=[
+                    {"role": "system", "content": sys_prompt_arg},
+                    {"role": "user", "content": formatted_content},
+                ],
+                reasoning_effort=self.reasoning_effort,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                top_p=top_p,
+            )
+            response_text = response.choices[0].message.content
 
-        response_text = response.choices[0].message.content
         response_text = re.sub(r"<think>.*?</think>", "", response_text, flags=re.DOTALL).strip()
-        if len(response) > 4000:
-            response = response[:2000] + "..." + response[-2000:]
+        if len(response_text) > 4000:
+            response_text = response_text[:2000] + "..." + response_text[-2000:]
         self._save_cache(cache_key, response_text)
         return response_text
 
@@ -176,6 +233,7 @@ class ChatOpenAI(BaseOpenAIEngine):
         api_key: Optional[str] = None,
         reasoning_effort: Union[str, NotGiven] = NOT_GIVEN,
         cache_root: Optional[str] = None,
+        stream: bool = False,
         **kwargs,
     ):
         """
@@ -191,7 +249,7 @@ class ChatOpenAI(BaseOpenAIEngine):
             os.mkdir(root) if not os.path.exists(root) else None
         cache_path = os.path.join(root, f"cache_my_{model_string}.db")
 
-        super().__init__(cache_path, system_prompt, model_string, is_multimodal, reasoning_effort)
+        super().__init__(cache_path, system_prompt, model_string, is_multimodal, reasoning_effort, stream)
 
         if not base_url and os.getenv("OPENAI_BASE_URL") is None:
             raise ValueError(
